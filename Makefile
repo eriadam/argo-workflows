@@ -66,7 +66,6 @@ RUN_MODE              := local
 KUBECTX               := $(shell [[ "`which kubectl`" != '' ]] && kubectl config current-context || echo none)
 DOCKER_DESKTOP        := $(shell [[ "$(KUBECTX)" == "docker-desktop" ]] && echo true || echo false)
 K3D                   := $(shell [[ "$(KUBECTX)" == "k3d-"* ]] && echo true || echo false)
-K3S                   := $(shell [[ "`which k3s`" != '' ]] && echo true || echo false)
 LOG_LEVEL             := debug
 UPPERIO_DB_DEBUG      := 0
 NAMESPACED            := true
@@ -413,14 +412,10 @@ ifneq ($(E2E_EXECUTOR),emissary)
 	kubectl apply -f manifests/quick-start/base/executor/$(E2E_EXECUTOR)
 endif
 ifeq ($(PROFILE),multi-cluster)
-ifeq ($(K3S),true)
-	k3s cluster create other --kubeconfig-switch-context=false --no-lb
-else
 	k3d cluster delete other
 	k3d cluster create other --kubeconfig-switch-context=false --no-lb
 	kubectl config delete-context other || true
 	kubectl config rename-context k3d-other other
-endif
 	kubectl delete secret -l workflows.argoproj.io/cluster
 	kubectl create secret generic other-cluster "--from-literal=kubeconfig=`kubectl config view --context=other --minify --raw -o json`"
 	kubectl label secret other-cluster workflows.argoproj.io/cluster=other
