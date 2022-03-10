@@ -9,6 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/metadata"
+	"k8s.io/client-go/metadata/metadatainformer"
+
 	"github.com/argoproj/pkg/errors"
 	syncpkg "github.com/argoproj/pkg/sync"
 	log "github.com/sirupsen/logrus"
@@ -18,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
@@ -26,6 +31,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	v1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
+	"k8s.io/client-go/metadata/metadatainformer"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/leaderelection"
@@ -250,7 +257,8 @@ func (wfc *WorkflowController) Run(ctx context.Context, wfWorkers, workflowTTLWo
 	wfc.taskResultInformer = wfc.newWorkflowTaskResultInformer()
 
 	wfc.addWorkflowInformerHandlers(ctx)
-	wfc.podInformers = wfc.newPodInformers()
+	podInformers, podGCInformers := wfc.newPodInformers()
+	wfc.podInformers = podInformers
 	wfc.updateEstimatorFactory()
 
 	wfc.configMapInformer = wfc.newConfigMapInformer()
@@ -268,6 +276,9 @@ func (wfc *WorkflowController) Run(ctx context.Context, wfWorkers, workflowTTLWo
 	go wfc.wftmplInformer.Informer().Run(ctx.Done())
 	for _, podInformer := range wfc.podInformers {
 		go podInformer.Run(ctx.Done())
+	}
+	for _, podGCInformer := range podGCInformers {
+		go podGCInformer.Run(ctx.Done())
 	}
 	go wfc.configMapInformer.Run(ctx.Done())
 	go wfc.wfTaskSetInformer.Informer().Run(ctx.Done())
@@ -1000,31 +1011,49 @@ func (wfc *WorkflowController) archiveWorkflowAux(ctx context.Context, obj inter
 	return nil
 }
 
-func (wfc *WorkflowController) newPodInformers() map[string]cache.SharedIndexInformer {
+var incompleteReq, _ = labels.NewRequirement(common.LabelKeyCompleted, selection.Equals, []string{"false"})
+var workflowReq, _ = labels.NewRequirement(common.LabelKeyWorkflow, selection.Exists, nil)
+
+func (wfc *WorkflowController) newInstanceIDRequirement() labels.Requirement {
+	return util.InstanceIDRequirement(wfc.Config.InstanceID)
+}
+
+func (wfc *WorkflowController) newClusterRequirement(cluster string) labels.Requirement {
+	clusterReq, _ := labels.NewRequirement(common.LabelKeyCluster, selection.DoesNotExist, nil)
+	if cluster != "" {
+		clusterReq, _ = labels.NewRequirement(common.LabelKeyCluster, selection.Equals, []string{wfc.Config.Cluster})
+	}
+	return *clusterReq
+}
+
+func (wfc *WorkflowController) newPodInformers() (map[string]cache.SharedIndexInformer, map[string]cache.SharedIndexInformer) {
 	podInformers := make(map[string]cache.SharedIndexInformer)
-	incompleteReq, _ := labels.NewRequirement(common.LabelKeyCompleted, selection.Equals, []string{"false"})
-	for cluster, k := range wfc.kubeclientsets {
-		clusterReq, _ := labels.NewRequirement(common.LabelKeyCluster, selection.DoesNotExist, nil)
-		if cluster != "" {
-			clusterReq, _ = labels.NewRequirement(common.LabelKeyCluster, selection.Equals, []string{wfc.Config.Cluster})
-		}
+	podGCInformers := make(map[string]cache.SharedIndexInformer)
+	for cluster, kubeclient := range wfc.kubeclientsets {
 		labelSelector := labels.NewSelector().
+			Add(*workflowReq).
 			Add(*incompleteReq).
-			Add(*clusterReq).
-			Add(util.InstanceIDRequirement(wfc.Config.InstanceID)).
+			Add(wfc.newClusterRequirement(cluster)).
+			Add(wfc.newInstanceIDRequirement()).
 			String()
 		managedNamespace := wfc.GetManagedNamespace()
 		log.WithField("cluster", cluster).
 			WithField("managedNamespace", managedNamespace).
 			WithField("labelSelector", labelSelector).
-			Info()
-		podInformer := v1.NewFilteredPodInformer(k, managedNamespace, podResyncPeriod, cache.Indexers{
-			indexes.WorkflowIndex: indexes.MetaWorkflowIndexFunc,
-			indexes.NodeIDIndex:   indexes.MetaNodeIDIndexFunc,
-			indexes.PodPhaseIndex: indexes.PodPhaseIndexFunc,
-		}, func(options *metav1.ListOptions) {
-			options.LabelSelector = labelSelector
-		})
+			Info("Creating pod informer")
+		podInformer := v1.NewFilteredPodInformer(
+			kubeclient,
+			managedNamespace,
+			podResyncPeriod,
+			cache.Indexers{
+				indexes.WorkflowIndex: indexes.MetaWorkflowIndexFunc,
+				indexes.NodeIDIndex:   indexes.MetaNodeIDIndexFunc,
+				indexes.PodPhaseIndex: indexes.PodPhaseIndexFunc,
+			},
+			func(options *metav1.ListOptions) {
+				options.LabelSelector = labelSelector
+			},
+		)
 		podInformer.AddEventHandler(
 			cache.ResourceEventHandlerFuncs{
 				AddFunc: func(obj interface{}) {
@@ -1064,10 +1093,52 @@ func (wfc *WorkflowController) newPodInformers() map[string]cache.SharedIndexInf
 			},
 		)
 		podInformers[cluster] = podInformer
-	}
-	return podInformers
-}
 
+		labelSelector = labels.NewSelector().
+			Add(*workflowReq).
+			Add(wfc.newClusterRequirement(cluster)).
+			Add(wfc.newInstanceIDRequirement()).
+			String()
+
+		log.WithField("cluster", cluster).
+			WithField("managedNamespace", managedNamespace).
+			WithField("labelSelector", labelSelector).
+			Info("Creating pod GC informer")
+
+		podGCInformer := metadatainformer.NewFilteredMetadataInformer(
+			metadata.NewForConfigOrDie(wfc.restConfigs[cluster]),
+			schema.GroupVersionResource{Version: "v1", Resource: "pods"},
+			managedNamespace,
+			time.Hour,
+			cache.Indexers{},
+			func(options *metav1.ListOptions) {
+				options.LabelSelector = labelSelector
+			},
+		).Informer()
+		podGCInformer.AddEventHandler(
+			cache.ResourceEventHandlerFuncs{
+				UpdateFunc: func(_, obj interface{}) {
+					pod := obj.(metav1.Object)
+					namespace := common.WorkflowNamespace(pod)
+					workflow := pod.GetLabels()[common.LabelKeyWorkflow]
+					_, exists, _ := wfc.wfInformer.GetIndexer().GetByKey(namespace + "/" + workflow)
+					if !exists {
+						log.
+							WithField("cluster", cluster).
+							WithField("workflowNamespace", namespace).
+							WithField("workflow", workflow).
+							WithField("podNamespace", pod.GetNamespace()).
+							WithField("podName", pod.GetName()).
+							Info("deleting orphan pod")
+						wfc.queuePodForCleanup(cluster, pod.GetNamespace(), pod.GetName(), deletePod)
+					}
+				},
+			},
+		)
+		podGCInformers[cluster] = podGCInformer
+	}
+	return podInformers, podGCInformers
+}
 func (wfc *WorkflowController) newConfigMapInformer() cache.SharedIndexInformer {
 	indexInformer := v1.NewFilteredConfigMapInformer(wfc.kubeclientset, wfc.GetManagedNamespace(), 20*time.Minute, cache.Indexers{
 		indexes.ConfigMapLabelsIndex: indexes.ConfigMapIndexFunc,

@@ -231,7 +231,7 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 		})
 	} else {
 		pod.Labels[common.LabelKeyCluster] = woc.controller.Config.Cluster
-		pod.Labels[common.LabelKeyNamespace] = woc.wf.Namespace
+		pod.Labels[common.LabelKeyWorkflowNamespace] = woc.wf.Namespace
 	}
 
 	namespace := tmpl.Namespace

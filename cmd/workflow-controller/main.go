@@ -175,17 +175,17 @@ func loadClusters(ctx context.Context, config *restclient.Config, namespace stri
 	secrets := kubernetes.NewForConfigOrDie(config).CoreV1().Secrets(namespace)
 	list, err := secrets.List(ctx, metav1.ListOptions{LabelSelector: common.LabelKeyCluster})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to list kubeconfig secrets: %w", err)
 	}
 	for _, item := range list.Items {
 		kc, err := clientcmd.Load(item.Data["kubeconfig"])
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to load kubeconfig from secret %q: %w", item.Name, err)
 		}
 		cluster := item.Labels[common.LabelKeyCluster]
 		config, err := clientcmd.NewNonInteractiveClientConfig(*kc, kc.CurrentContext, &clientcmd.ConfigOverrides{}, clientcmd.NewDefaultClientConfigLoadingRules()).ClientConfig()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to create client config for secret %q: %w", item.Name, err)
 		}
 		logs.AddK8SLogTransportWrapper(config)
 		metrics.AddMetricsTransportWrapper(config)

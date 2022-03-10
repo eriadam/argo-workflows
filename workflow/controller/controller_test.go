@@ -224,7 +224,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 		wfc.taskResultInformer = informerFactory.Argoproj().V1alpha1().WorkflowTaskResults()
 		wfc.wftmplInformer = informerFactory.Argoproj().V1alpha1().WorkflowTemplates()
 		wfc.addWorkflowInformerHandlers(ctx)
-		wfc.podInformers = wfc.newPodInformers()
+		wfc.podInformers, _ = wfc.newPodInformers()
 		wfc.configMapInformer = wfc.newConfigMapInformer()
 		wfc.createSynchronizationManager(ctx)
 		_ = wfc.initManagers(ctx)

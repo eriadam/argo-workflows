@@ -18,7 +18,7 @@ func (s *MultiClusterSuite) TestMultiCluster() {
 	s.Given().
 		Workflow(`
 metadata:
-  generateName: basic-
+  generateName: multi-cluster-
 spec:
   entrypoint: main
   artifactRepositoryRef:

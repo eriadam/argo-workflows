@@ -70,8 +70,8 @@ const (
 	LabelKeyWorkflowArchivingStatus = workflow.WorkflowFullName + "/workflow-archiving-status"
 	// LabelKeyWorkflow is the pod metadata label to indicate the associated workflow name
 	LabelKeyWorkflow = workflow.WorkflowFullName + "/workflow"
-	// LabelKeyNamespace is the namespace of the owner workflow, if different to the pod itself.
-	LabelKeyNamespace = workflow.WorkflowFullName + "/namespace"
+	// LabelKeyWorkflowNamespace is the namespace of the owner workflow, if different to the pod itself.
+	LabelKeyWorkflowNamespace = workflow.WorkflowFullName + "/workflow-namespace"
 	// LabelKeyComponent determines what component within a workflow, intentionally similar to app.kubernetes.io/component.
 	// See https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 	LabelKeyComponent = workflow.WorkflowFullName + "/component"
@@ -252,7 +252,7 @@ func UnstructuredHasCompletedLabel(obj interface{}) bool {
 }
 
 func WorkflowNamespace(m metav1.Object) string {
-	if x := m.GetLabels()[LabelKeyNamespace]; x != "" {
+	if x := m.GetLabels()[LabelKeyWorkflowNamespace]; x != "" {
 		return x
 	}
 	return m.GetNamespace()
