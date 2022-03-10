@@ -132,8 +132,8 @@ FROM scratch as workflow-controller
 USER 8737
 
 COPY --chown=8737 --from=workflow-controller-build /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --chown=8737 model.conf /model.conf
-COPY --chown=8737 --from=workflow-controller-build /empty /policy.csv
+COPY --chown=8737 auth/model.conf /auth/model.conf
+COPY --chown=8737 --from=workflow-controller-build /empty /auth/policy.csv
 COPY --chown=8737 --from=workflow-controller-build /go/src/github.com/argoproj/argo-workflows/dist/workflow-controller /bin/
 
 ENTRYPOINT [ "workflow-controller" ]

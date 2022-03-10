@@ -162,7 +162,7 @@ func NewWorkflowController(
 	if err != nil {
 		return nil, err
 	}
-	enforcer, err := casbin.NewEnforcer("model.conf", "policy.csv")
+	enforcer, err := casbin.NewEnforcer("auth/model.conf", "auth/policy.csv")
 	if err != nil {
 		return nil, err
 	}

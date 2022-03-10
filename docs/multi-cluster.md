@@ -3,7 +3,7 @@
 Argo allows you to run workflows where the tasks that make up the workflow run in a different cluster and namespace to
 the workflow.
 
-## Kubeconfig
+## Configuration
 
 Argo can only create pods in clusters in can connect to - ones it has a `kubeconfig` for. These must be installed in the
 system namespace (typically `argo`):
@@ -20,24 +20,53 @@ kubectl create secret generic other-cluster "--from-literal=kubeconfig=`kubectl 
 kubectl label secret other-cluster workflows.argoproj.io/cluster=other
 ```
 
-You can only provide one secret for each cluster. If you want to control which teams can access which namespaces we need to add some rules:
+You can only provide one secret for each cluster.
 
+Secrets alone are not enough to allow a workflow to create resources in another namespace. By default, workflows are
+only allowed to create workflows in their own namespace. You also need to create a Casbin RBAC policy and this must be
+mounted at /policy.csv in the workflow-controller:
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: policy
+data:
+  policy.csv: |
+    # Workflows in the "argo" namespace may create resources in the "other" cluster's "default" namespace
+    p, argo, other, default
 ```
-[request_definition]
-r = workflowNamespace, cluster, podNamespace
 
-[policy_definition]
-p = workflowNamespace, cluster, podNamespace
-
-[policy_effect]
-e = some(where (p.eft == allow))
-
-[matchers]
-m = r.workflowNamespace == p.workflowNamespace && r.cluster == p.cluster && r.podNamespace == p.podNamespace
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-controller
+spec:
+  template:
+    spec:
+      volumes:
+        - name: policy
+          configMap:
+            name: policy
+      containers:
+        - name: workflow-controller
+          volumeMounts:
+            - mountPath: /
+              name: policy
 ```
 
-```
-p, argo, other, default
+Finally, the workflow controller must be configured with a unique name for the cluster.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+data:
+  # A unique name for the cluster.
+  # It is acceptable for this to be a random UUID, but once set, it should not be changed.
+  cluster: my-cluster-x
 ```
 
 ## Labels
