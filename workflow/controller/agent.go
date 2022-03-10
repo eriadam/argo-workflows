@@ -76,7 +76,7 @@ func (woc *wfOperationCtx) createAgentPod(ctx context.Context) (*apiv1.Pod, erro
 	podName := woc.getAgentPodName()
 	log := woc.log.WithField("podName", podName)
 
-	obj, exists, err := woc.controller.podInformers[""].GetStore().Get(cache.ExplicitKey(woc.wf.Namespace + "/" + podName))
+	obj, exists, err := woc.controller.podInformers[common.LocalCluster].GetStore().Get(cache.ExplicitKey(woc.wf.Namespace + "/" + podName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pod from informer store: %w", err)
 	}

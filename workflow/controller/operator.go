@@ -2063,7 +2063,7 @@ func (woc *wfOperationCtx) markWorkflowPhase(ctx context.Context, phase wfv1.Wor
 			}
 			woc.updated = true
 		}
-		woc.controller.queuePodForCleanup("", woc.wf.Namespace, woc.getAgentPodName(), deletePod)
+		woc.controller.queuePodForCleanup(common.LocalCluster, woc.wf.Namespace, woc.getAgentPodName(), deletePod)
 	}
 }
 
@@ -2267,7 +2267,7 @@ func (woc *wfOperationCtx) getPodByNode(node *wfv1.NodeStatus) (*apiv1.Pod, erro
 	}
 	cluster := tmpl.Cluster
 	namespace := tmpl.Namespace
-	if namespace == "" {
+	if namespace == common.WorkflowNamespace {
 		namespace = woc.wf.GetNamespace()
 	}
 	podName := woc.getPodName(node.Name, node.TemplateName)

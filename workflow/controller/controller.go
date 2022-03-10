@@ -11,6 +11,7 @@ import (
 
 	"github.com/argoproj/pkg/errors"
 	syncpkg "github.com/argoproj/pkg/sync"
+	"github.com/casbin/casbin/v2"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 	apiv1 "k8s.io/api/core/v1"
@@ -126,6 +127,7 @@ type WorkflowController struct {
 	// Default is 3s and can be configured using the env var ARGO_PROGRESS_FILE_TICK_DURATION
 	progressFileTickDuration time.Duration
 	executorPlugins          map[string]map[string]*spec.Plugin // namespace -> name -> plugin
+	enforcer                 casbin.IEnforcer
 }
 
 const (
@@ -155,12 +157,17 @@ func NewWorkflowController(
 	namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap string,
 	executorPlugins bool,
 ) (*WorkflowController, error) {
-	kubeclientset := kubeclientsets[""]
+	kubeclientset := kubeclientsets[common.LocalCluster]
 	dynamicInterface, err := dynamic.NewForConfig(restConfigs[""])
 	if err != nil {
 		return nil, err
 	}
+	enforcer, err := casbin.NewEnforcer("model.conf", "policy.csv")
+	if err != nil {
+		return nil, err
+	}
 	wfc := WorkflowController{
+		enforcer:                   enforcer,
 		restConfigs:                restConfigs,
 		kubeclientset:              kubeclientset,
 		kubeclientsets:             kubeclientsets,
@@ -855,7 +862,7 @@ func (wfc *WorkflowController) enqueueWfFromPodLabel(obj interface{}) error {
 		// Ignore pods unrelated to workflow (this shouldn't happen unless the watch is setup incorrectly)
 		return fmt.Errorf("Watch returned pod unrelated to any workflow")
 	}
-	namespace := common.WorkflowNamespace(pod)
+	namespace := common.MetaWorkflowNamespace(pod)
 	wfc.wfQueue.AddRateLimited(namespace + "/" + workflowName)
 	return nil
 }
@@ -1013,13 +1020,13 @@ func (wfc *WorkflowController) archiveWorkflowAux(ctx context.Context, obj inter
 var incompleteReq, _ = labels.NewRequirement(common.LabelKeyCompleted, selection.Equals, []string{"false"})
 var workflowReq, _ = labels.NewRequirement(common.LabelKeyWorkflow, selection.Exists, nil)
 
-func (wfc *WorkflowController) newInstanceIDRequirement() labels.Requirement {
+func (wfc *WorkflowController) newInstanceIDReq() labels.Requirement {
 	return util.InstanceIDRequirement(wfc.Config.InstanceID)
 }
 
-func (wfc *WorkflowController) newClusterRequirement(cluster string) labels.Requirement {
+func (wfc *WorkflowController) newProfileReq(cluster string) labels.Requirement {
 	clusterReq, _ := labels.NewRequirement(common.LabelKeyCluster, selection.DoesNotExist, nil)
-	if cluster != "" {
+	if cluster != common.LocalCluster {
 		clusterReq, _ = labels.NewRequirement(common.LabelKeyCluster, selection.Equals, []string{wfc.Config.Cluster})
 	}
 	return *clusterReq
@@ -1032,8 +1039,8 @@ func (wfc *WorkflowController) newPodInformers() (map[string]cache.SharedIndexIn
 		labelSelector := labels.NewSelector().
 			Add(*workflowReq).
 			Add(*incompleteReq).
-			Add(wfc.newClusterRequirement(cluster)).
-			Add(wfc.newInstanceIDRequirement()).
+			Add(wfc.newProfileReq(cluster)).
+			Add(wfc.newInstanceIDReq()).
 			String()
 		managedNamespace := wfc.GetManagedNamespace()
 		log.WithField("cluster", cluster).
@@ -1095,8 +1102,8 @@ func (wfc *WorkflowController) newPodInformers() (map[string]cache.SharedIndexIn
 
 		labelSelector = labels.NewSelector().
 			Add(*workflowReq).
-			Add(wfc.newClusterRequirement(cluster)).
-			Add(wfc.newInstanceIDRequirement()).
+			Add(wfc.newProfileReq(cluster)).
+			Add(wfc.newInstanceIDReq()).
 			String()
 
 		log.WithField("cluster", cluster).
@@ -1118,7 +1125,7 @@ func (wfc *WorkflowController) newPodInformers() (map[string]cache.SharedIndexIn
 			cache.ResourceEventHandlerFuncs{
 				UpdateFunc: func(_, obj interface{}) {
 					pod := obj.(metav1.Object)
-					namespace := common.WorkflowNamespace(pod)
+					namespace := common.MetaWorkflowNamespace(pod)
 					workflow := pod.GetLabels()[common.LabelKeyWorkflow]
 					_, exists, _ := wfc.wfInformer.GetIndexer().GetByKey(namespace + "/" + workflow)
 					if !exists {

@@ -6,7 +6,7 @@ the workflow.
 ## Kubeconfig
 
 Argo can only create pods in clusters in can connect to - ones it has a `kubeconfig` for. These must be installed in the
-system namespace (typcially `argo`):
+system namespace (typically `argo`):
 
 ```bash
 kubectl get secret -l workflows.argoproj.io/cluster
@@ -16,7 +16,28 @@ You can add a new secret with a single `kubeconfig` field:
 
 ```bash
 kubectl create secret generic other-cluster "--from-literal=kubeconfig=`kubectl config view --context=other --minify --raw -o json`"
+# label the secret so it can be discovered and 
 kubectl label secret other-cluster workflows.argoproj.io/cluster=other
+```
+
+You can only provide one secret for each cluster. If you want to control which teams can access which namespaces we need to add some rules:
+
+```
+[request_definition]
+r = workflowNamespace, cluster, podNamespace
+
+[policy_definition]
+p = workflowNamespace, cluster, podNamespace
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.workflowNamespace == p.workflowNamespace && r.cluster == p.cluster && r.podNamespace == p.podNamespace
+```
+
+```
+p, argo, other, default
 ```
 
 ## Labels
@@ -44,6 +65,6 @@ cluster or namespace to the workflow.
 If a pod is created in another cluster, and the parent workflow is deleted, then Argo must garbage collect it. Normally,
 Kubernetes would do this.
 
-⚠️ This garbage collection is done on best effort, and that might be long time after the workflow is deleted. To mitigate
-this, use `podGCStrategy`.
+⚠️ This garbage collection is done on best effort, and that might be long time after the workflow is deleted. To
+mitigate this, use `podGCStrategy`.
 

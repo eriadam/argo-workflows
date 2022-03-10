@@ -64,7 +64,7 @@ func (woc *wfOperationCtx) applyExecutionControl(ctx context.Context, pod *apiv1
 	if woc.GetShutdownStrategy().Enabled() {
 		if _, onExitPod := pod.Labels[common.LabelKeyOnExit]; !woc.GetShutdownStrategy().ShouldExecute(onExitPod) {
 			woc.log.Infof("Shutting down pod %s", pod.Name)
-			namespace := common.WorkflowNamespace(pod)
+			namespace := common.MetaWorkflowNamespace(pod)
 			woc.controller.queuePodForCleanup(pod.Labels[common.LabelKeyCluster], namespace, pod.Name, shutdownPod)
 		}
 	}
@@ -101,7 +101,7 @@ func (woc *wfOperationCtx) killDaemonedChildren(nodeID string) {
 		tmpl := woc.execWf.GetTemplateByName(childNode.TemplateName)
 		cluster := tmpl.Cluster
 		namespace := tmpl.Namespace
-		if namespace == "" {
+		if namespace == common.WorkflowNamespace {
 			namespace = woc.wf.Namespace
 		}
 		woc.controller.queuePodForCleanup(cluster, namespace, childNode.ID, shutdownPod)

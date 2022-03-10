@@ -172,26 +172,24 @@ func NewRootCommand() *cobra.Command {
 }
 
 func loadClusters(ctx context.Context, config *restclient.Config, namespace string) (map[string]*restclient.Config, map[string]kubernetes.Interface, map[string]metadata.Interface, error) {
-	configs := map[string]*restclient.Config{"": config}
-
+	configs := map[string]*restclient.Config{common.LocalCluster: config}
 	secrets := kubernetes.NewForConfigOrDie(config).CoreV1().Secrets(namespace)
 	list, err := secrets.List(ctx, metav1.ListOptions{LabelSelector: common.LabelKeyCluster})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to list kubeconfig secrets: %w", err)
 	}
-	for _, item := range list.Items {
-		kc, err := clientcmd.Load(item.Data["kubeconfig"])
+	for _, secret := range list.Items {
+		kc, err := clientcmd.Load(secret.Data["kubeconfig"])
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to load kubeconfig from secret %q: %w", item.Name, err)
+			return nil, nil, nil, fmt.Errorf("failed to load kubeconfig from secret %q: %w", secret.Name, err)
 		}
-		cluster := item.Labels[common.LabelKeyCluster]
 		config, err := clientcmd.NewNonInteractiveClientConfig(*kc, kc.CurrentContext, &clientcmd.ConfigOverrides{}, clientcmd.NewDefaultClientConfigLoadingRules()).ClientConfig()
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to create client config for secret %q: %w", item.Name, err)
+			return nil, nil, nil, fmt.Errorf("failed to create client config for secret %q: %w", secret.Name, err)
 		}
 		logs.AddK8SLogTransportWrapper(config)
 		metrics.AddMetricsTransportWrapper(config)
-		configs[cluster] = config
+		configs[secret.Labels[common.LabelKeyCluster]] = config
 	}
 	kubeclientsets := map[string]kubernetes.Interface{}
 	metadataInterfaces := map[string]metadata.Interface{}

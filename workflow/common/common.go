@@ -1,7 +1,6 @@
 package common
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/argoproj/argo-workflows/v3/pkg/apis/workflow"
@@ -60,8 +59,6 @@ const (
 	// Workflows and pods with a completed=true label will be ignored by the controller.
 	// See also `LabelKeyWorkflowArchivingStatus`.
 	LabelKeyCompleted = workflow.WorkflowFullName + "/completed"
-	// LabelKeyCluster is the cluster. This is omitted for this cluster.
-	LabelKeyCluster = workflow.WorkflowFullName + "/cluster"
 	// LabelKeyWorkflowArchivingStatus indicates if a workflow needs archiving or not:
 	// * `` - does not need archiving ... yet
 	// * `Pending` - pending archiving
@@ -70,6 +67,8 @@ const (
 	LabelKeyWorkflowArchivingStatus = workflow.WorkflowFullName + "/workflow-archiving-status"
 	// LabelKeyWorkflow is the pod metadata label to indicate the associated workflow name
 	LabelKeyWorkflow = workflow.WorkflowFullName + "/workflow"
+	// LabelKeyCluster is the cluster. This is omitted for this cluster.
+	LabelKeyCluster = workflow.WorkflowFullName + "/cluster"
 	// LabelKeyWorkflowNamespace is the namespace of the owner workflow, if different to the pod itself.
 	LabelKeyWorkflowNamespace = workflow.WorkflowFullName + "/workflow-namespace"
 	// LabelKeyComponent determines what component within a workflow, intentionally similar to app.kubernetes.io/component.
@@ -106,6 +105,13 @@ const (
 	ExecutorScriptSourcePath = "/argo/staging/script"
 	// ExecutorResourceManifestPath is the path which init will write the a manifest file to for resource templates
 	ExecutorResourceManifestPath = "/tmp/manifest.yaml"
+
+	// LocalCluster is the alias of the local cluster.
+	// This is to help show the intention of code, must always be the empty string.
+	LocalCluster = ""
+	// WorkflowNamespace is the alias of the workflow's namespace.
+	// This is to help show the intention of code, must always be the empty string.
+	WorkflowNamespace = ""
 
 	// Various environment variables containing pod information exposed to the executor container(s)
 
@@ -249,11 +255,4 @@ func UnstructuredHasCompletedLabel(obj interface{}) bool {
 		return wf.GetLabels()[LabelKeyCompleted] == "true"
 	}
 	return false
-}
-
-func WorkflowNamespace(m metav1.Object) string {
-	if x := m.GetLabels()[LabelKeyWorkflowNamespace]; x != "" {
-		return x
-	}
-	return m.GetNamespace()
 }

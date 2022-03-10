@@ -170,7 +170,6 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 	informerFactory := wfextv.NewSharedInformerFactory(wfclientset, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	kube := fake.NewSimpleClientset(coreObjects...)
-
 	fakeMetadataClient := fakemetadata.FakeMetadataClient{}
 	wfc := &WorkflowController{
 		Config: config.Config{
@@ -190,8 +189,8 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 			},
 		}),
 		kubeclientset:             kube,
-		kubeclientsets:            map[string]kubernetes.Interface{"": kube},
-		metadataInterfaces:        map[string]metadata.Interface{"": &fakeMetadataClient},
+		kubeclientsets:            map[string]kubernetes.Interface{common.LocalCluster: kube},
+		metadataInterfaces:        map[string]metadata.Interface{common.LocalCluster: &fakeMetadataClient},
 		dynamicInterface:          dynamicClient,
 		wfclientset:               wfclientset,
 		workflowKeyLock:           sync.NewKeyLock(),
@@ -368,20 +367,20 @@ func createRunningPods(ctx context.Context, woc *wfOperationCtx) {
 					Phase: apiv1.PodRunning,
 				},
 			}, metav1.CreateOptions{})
-			_ = woc.controller.podInformers[""].GetStore().Add(pod)
+			_ = woc.controller.podInformers[common.LocalCluster].GetStore().Add(pod)
 		}
 	}
 }
 
 func syncPodsInformer(ctx context.Context, woc *wfOperationCtx, podObjs ...apiv1.Pod) {
-	podcs := woc.controller.kubeclientsets[""].CoreV1().Pods(woc.wf.GetNamespace())
+	podcs := woc.controller.kubeclientsets[common.LocalCluster].CoreV1().Pods(woc.wf.GetNamespace())
 	pods, err := podcs.List(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err)
 	}
 	podObjs = append(podObjs, pods.Items...)
 	for _, pod := range podObjs {
-		err = woc.controller.podInformers[""].GetIndexer().Add(&pod)
+		err = woc.controller.podInformers[common.LocalCluster].GetIndexer().Add(&pod)
 		if err != nil {
 			panic(err)
 		}
@@ -408,7 +407,7 @@ func makePodsPhase(ctx context.Context, woc *wfOperationCtx, phase apiv1.PodPhas
 			if err != nil {
 				panic(err)
 			}
-			err = woc.controller.podInformers[""].GetStore().Update(updatedPod)
+			err = woc.controller.podInformers[common.LocalCluster].GetStore().Update(updatedPod)
 			if err != nil {
 				panic(err)
 			}
@@ -424,7 +423,7 @@ func deletePods(ctx context.Context, woc *wfOperationCtx) {
 			if err != nil {
 				panic(err)
 			}
-			err = woc.controller.podInformers[""].GetStore().Delete(obj)
+			err = woc.controller.podInformers[common.LocalCluster].GetStore().Delete(obj)
 			if err != nil {
 				panic(err)
 			}
@@ -828,6 +827,6 @@ spec:
 	woc.operate(ctx)
 	controller.processNextPodCleanupItem(ctx)
 	assert.Equal(t, wfv1.WorkflowSucceeded, woc.wf.Status.Phase)
-	podCleanupKey := newPodCleanupKey("", "test", "my-wf", labelPodCompleted)
+	podCleanupKey := newPodCleanupKey(common.LocalCluster, "test", "my-wf", labelPodCompleted)
 	assert.Equal(t, 0, controller.podCleanupQueue.NumRequeues(podCleanupKey))
 }

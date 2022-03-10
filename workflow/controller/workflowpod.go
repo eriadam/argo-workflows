@@ -225,7 +225,7 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 
 	cluster := tmpl.Cluster
 
-	if cluster == "" {
+	if cluster == common.LocalCluster {
 		pod.SetOwnerReferences([]metav1.OwnerReference{
 			*metav1.NewControllerRef(woc.wf, wfv1.SchemeGroupVersion.WithKind(workflow.WorkflowKind)),
 		})
@@ -235,7 +235,7 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 	}
 
 	namespace := tmpl.Namespace
-	if namespace == "" {
+	if namespace == common.WorkflowNamespace {
 		namespace = woc.wf.Namespace
 	}
 
@@ -244,6 +244,13 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 		WithField("namespace", namespace).
 		WithField("cluster", cluster)
 
+	ok, err := woc.controller.enforcer.Enforce(woc.wf.Namespace, cluster, namespace)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("access denied to cluster %q namespace %q from namespace %q", cluster, namespace, woc.wf.Namespace)
+	}
 	if opts.onExitPod {
 		// This pod is part of an onExit handler, label it so
 		pod.ObjectMeta.Labels[common.LabelKeyOnExit] = "true"
