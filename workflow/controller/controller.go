@@ -1252,11 +1252,7 @@ func (wfc *WorkflowController) syncPodPhaseMetrics() {
 	for _, phase := range []apiv1.PodPhase{apiv1.PodRunning, apiv1.PodPending} {
 		num := 0
 		for _, podInformer := range wfc.podInformers {
-			objs, err := podInformer.GetIndexer().IndexKeys(indexes.PodPhaseIndex, string(phase))
-			if err != nil {
-				log.WithError(err).Error("failed to list active pods")
-				return
-			}
+			objs, _ := podInformer.GetIndexer().IndexKeys(indexes.PodPhaseIndex, string(phase))
 			num += len(objs)
 		}
 		wfc.metrics.SetPodPhaseGauge(phase, num)
