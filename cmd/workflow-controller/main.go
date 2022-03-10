@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/client-go/metadata"
+
 	"github.com/argoproj/pkg/cli"
 	"github.com/argoproj/pkg/errors"
 	kubecli "github.com/argoproj/pkg/kube/cli"
@@ -19,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
 
 	// load authentication plugin for obtaining credentials from cloud providers.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -102,13 +105,14 @@ func NewRootCommand() *cobra.Command {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			configs, kubeclientsets, err := loadClusters(ctx, config, namespace)
+			configs, kubeclientsets, metadataInterfaces, err := loadClusters(ctx, config, namespace)
 			errors.CheckError(err)
 
 			wfController, err := controller.NewWorkflowController(
 				ctx,
 				configs,
 				kubeclientsets,
+				metadataInterfaces,
 				wfclientset,
 				namespace,
 				managedNamespace,
@@ -169,33 +173,35 @@ func NewRootCommand() *cobra.Command {
 	return &command
 }
 
-func loadClusters(ctx context.Context, config *restclient.Config, namespace string) (map[string]*restclient.Config, map[string]kubernetes.Interface, error) {
+func loadClusters(ctx context.Context, config *restclient.Config, namespace string) (map[string]*restclient.Config, map[string]kubernetes.Interface, map[string]metadata.Interface, error) {
 	configs := map[string]*restclient.Config{"": config}
 
 	secrets := kubernetes.NewForConfigOrDie(config).CoreV1().Secrets(namespace)
 	list, err := secrets.List(ctx, metav1.ListOptions{LabelSelector: common.LabelKeyCluster})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list kubeconfig secrets: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to list kubeconfig secrets: %w", err)
 	}
 	for _, item := range list.Items {
 		kc, err := clientcmd.Load(item.Data["kubeconfig"])
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to load kubeconfig from secret %q: %w", item.Name, err)
+			return nil, nil, nil, fmt.Errorf("failed to load kubeconfig from secret %q: %w", item.Name, err)
 		}
 		cluster := item.Labels[common.LabelKeyCluster]
 		config, err := clientcmd.NewNonInteractiveClientConfig(*kc, kc.CurrentContext, &clientcmd.ConfigOverrides{}, clientcmd.NewDefaultClientConfigLoadingRules()).ClientConfig()
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create client config for secret %q: %w", item.Name, err)
+			return nil, nil, nil, fmt.Errorf("failed to create client config for secret %q: %w", item.Name, err)
 		}
 		logs.AddK8SLogTransportWrapper(config)
 		metrics.AddMetricsTransportWrapper(config)
 		configs[cluster] = config
 	}
 	kubeclientsets := map[string]kubernetes.Interface{}
+	metadataInterfaces := map[string]metadata.Interface{}
 	for cluster, config := range configs {
 		kubeclientsets[cluster] = kubernetes.NewForConfigOrDie(config)
+		metadataInterfaces[cluster] = metadata.NewForConfigOrDie(config)
 	}
-	return configs, kubeclientsets, nil
+	return configs, kubeclientsets, metadataInterfaces, nil
 }
 
 func init() {

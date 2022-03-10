@@ -9,10 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/metadata"
-	"k8s.io/client-go/metadata/metadatainformer"
-
 	"github.com/argoproj/pkg/errors"
 	syncpkg "github.com/argoproj/pkg/sync"
 	log "github.com/sirupsen/logrus"
@@ -92,12 +88,13 @@ type WorkflowController struct {
 	containerRuntimeExecutor   string
 
 	// restConfig is used by controller to send a SIGUSR1 to the wait sidecar using remotecommand.NewSPDYExecutor().
-	restConfigs      map[string]*rest.Config
-	kubeclientset    kubernetes.Interface
-	kubeclientsets   map[string]kubernetes.Interface
-	rateLimiter      *rate.Limiter
-	dynamicInterface dynamic.Interface
-	wfclientset      wfclientset.Interface
+	restConfigs        map[string]*rest.Config
+	kubeclientset      kubernetes.Interface
+	kubeclientsets     map[string]kubernetes.Interface
+	metadataInterfaces map[string]metadata.Interface
+	rateLimiter        *rate.Limiter
+	dynamicInterface   dynamic.Interface
+	wfclientset        wfclientset.Interface
 
 	// datastructures to support the processing of workflows and workflow pods
 	wfInformer            cache.SharedIndexInformer
@@ -153,6 +150,7 @@ func NewWorkflowController(
 	ctx context.Context,
 	restConfigs map[string]*rest.Config,
 	kubeclientsets map[string]kubernetes.Interface,
+	metadataInterfaces map[string]metadata.Interface,
 	wfclientset wfclientset.Interface,
 	namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap string,
 	executorPlugins bool,
@@ -166,6 +164,7 @@ func NewWorkflowController(
 		restConfigs:                restConfigs,
 		kubeclientset:              kubeclientset,
 		kubeclientsets:             kubeclientsets,
+		metadataInterfaces:         metadataInterfaces,
 		dynamicInterface:           dynamicInterface,
 		wfclientset:                wfclientset,
 		namespace:                  namespace,
@@ -1106,7 +1105,7 @@ func (wfc *WorkflowController) newPodInformers() (map[string]cache.SharedIndexIn
 			Info("Creating pod GC informer")
 
 		podGCInformer := metadatainformer.NewFilteredMetadataInformer(
-			metadata.NewForConfigOrDie(wfc.restConfigs[cluster]),
+			wfc.metadataInterfaces[cluster],
 			schema.GroupVersionResource{Version: "v1", Resource: "pods"},
 			managedNamespace,
 			time.Hour,
