@@ -411,7 +411,7 @@ ifneq ($(E2E_EXECUTOR),emissary)
 	kubectl apply -f manifests/quick-start/base/executor/$(E2E_EXECUTOR)
 endif
 ifeq ($(PROFILE),multi-cluster)
-	k3d cluster get other || k3d cluster create other --kubeconfig-switch-context=false
+	k3d cluster get other || k3d cluster create other --kubeconfig-switch-context=false --no-lb
 	kubectl delete secret -l workflows.argoproj.io/cluster
 	kubectl create secret generic other-cluster "--from-literal=kubeconfig=`kubectl config view --context=k3d-other --minify --raw -o json`"
 	kubectl label secret other-cluster workflows.argoproj.io/cluster=other

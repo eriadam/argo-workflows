@@ -264,8 +264,6 @@ func (woc *wfOperationCtx) operate(ctx context.Context) {
 
 	if woc.wf.Status.Phase == wfv1.WorkflowUnknown {
 
-		woc.wf.Finalizers = append(woc.wf.Finalizers, common.Finalizer)
-
 		woc.markWorkflowRunning(ctx)
 		setWfPodNamesAnnotation(woc.wf)
 
