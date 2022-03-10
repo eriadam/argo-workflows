@@ -139,7 +139,7 @@ jobs:
       - name: Install and start K3S
         run: |
           curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-          k3s cluster create --wait
+          k3d cluster create --wait
           echo "- name: fake_token_user" >> $KUBECONFIG
           echo "  user:" >> $KUBECONFIG
           echo "    token: xxxxxx" >> $KUBECONFIG
