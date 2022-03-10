@@ -5,6 +5,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
 )
 
 func (woc *wfOperationCtx) queuePodsForCleanup() {
@@ -14,11 +15,12 @@ func (woc *wfOperationCtx) queuePodsForCleanup() {
 	selector, _ := podGC.GetLabelSelector()
 	workflowPhase := woc.wf.Status.Phase
 	for _, pod := range woc.completedPods {
+		cluster := pod.Annotations[common.LabelKeyCluster]
 		switch determinePodCleanupAction(selector, pod.Labels, strategy, workflowPhase, pod.Status.Phase) {
 		case deletePod:
-			woc.controller.queuePodForCleanupAfter(pod.Namespace, pod.Name, deletePod, delay)
+			woc.controller.queuePodForCleanupAfter(cluster, pod.Namespace, pod.Name, deletePod, delay)
 		case labelPodCompleted:
-			woc.controller.queuePodForCleanup(pod.Namespace, pod.Name, labelPodCompleted)
+			woc.controller.queuePodForCleanup(cluster, pod.Namespace, pod.Name, labelPodCompleted)
 		}
 	}
 }

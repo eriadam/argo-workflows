@@ -59,6 +59,8 @@ const (
 	// Workflows and pods with a completed=true label will be ignored by the controller.
 	// See also `LabelKeyWorkflowArchivingStatus`.
 	LabelKeyCompleted = workflow.WorkflowFullName + "/completed"
+	// LabelKeyCluster is the cluster. This is omitted for this cluster.
+	LabelKeyCluster = workflow.WorkflowFullName + "/cluster"
 	// LabelKeyWorkflowArchivingStatus indicates if a workflow needs archiving or not:
 	// * `` - does not need archiving ... yet
 	// * `Pending` - pending archiving

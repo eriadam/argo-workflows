@@ -2780,6 +2780,9 @@ func (a *Artifact) GetArchive() *ArchiveStrategy {
 
 // GetTemplateByName retrieves a defined template by its name
 func (wf *Workflow) GetTemplateByName(name string) *Template {
+	if wf == nil {
+		return nil
+	}
 	for _, t := range wf.Spec.Templates {
 		if t.Name == name {
 			return &t

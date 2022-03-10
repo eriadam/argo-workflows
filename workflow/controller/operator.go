@@ -1122,17 +1122,19 @@ func (woc *wfOperationCtx) failSuspendedAndPendingNodesAfterDeadlineOrShutdown()
 
 // getAllWorkflowPods returns all pods related to the current workflow
 func (woc *wfOperationCtx) getAllWorkflowPods() ([]*apiv1.Pod, error) {
-	objs, err := woc.controller.podInformer.GetIndexer().ByIndex(indexes.WorkflowIndex, indexes.WorkflowIndexValue(woc.wf.Namespace, woc.wf.Name))
-	if err != nil {
-		return nil, err
-	}
-	pods := make([]*apiv1.Pod, len(objs))
-	for i, obj := range objs {
-		pod, ok := obj.(*apiv1.Pod)
-		if !ok {
-			return nil, fmt.Errorf("expected \"*apiv1.Pod\", got \"%v\"", reflect.TypeOf(obj).String())
+	pods := make([]*apiv1.Pod, 0)
+	for _, podInformer := range woc.controller.podInformers {
+		objs, err := podInformer.GetIndexer().ByIndex(indexes.WorkflowIndex, indexes.WorkflowIndexValue(woc.wf.Namespace, woc.wf.Name))
+		if err != nil {
+			return nil, err
 		}
-		pods[i] = pod
+		for _, obj := range objs {
+			pod, ok := obj.(*apiv1.Pod)
+			if !ok {
+				return nil, fmt.Errorf("expected \"*apiv1.Pod\", got \"%v\"", reflect.TypeOf(obj).String())
+			}
+			pods = append(pods, pod)
+		}
 	}
 	return pods, nil
 }
@@ -1334,7 +1336,7 @@ func podHasContainerNeedingTermination(pod *apiv1.Pod, tmpl wfv1.Template) bool 
 
 func (woc *wfOperationCtx) cleanUpPod(pod *apiv1.Pod, tmpl wfv1.Template) {
 	if podHasContainerNeedingTermination(pod, tmpl) {
-		woc.controller.queuePodForCleanup(woc.wf.Namespace, pod.Name, terminateContainers)
+		woc.controller.queuePodForCleanup(pod.Annotations[common.LabelKeyCluster], woc.wf.Namespace, pod.Name, terminateContainers)
 	}
 }
 
@@ -2067,7 +2069,7 @@ func (woc *wfOperationCtx) markWorkflowPhase(ctx context.Context, phase wfv1.Wor
 			}
 			woc.updated = true
 		}
-		woc.controller.queuePodForCleanup(woc.wf.Namespace, woc.getAgentPodName(), deletePod)
+		woc.controller.queuePodForCleanup("", woc.wf.Namespace, woc.getAgentPodName(), deletePod)
 	}
 }
 
@@ -2265,9 +2267,17 @@ func (woc *wfOperationCtx) getPodByNode(node *wfv1.NodeStatus) (*apiv1.Pod, erro
 	if node.Type != wfv1.NodeTypePod {
 		return nil, fmt.Errorf("Expected node type %s, got %s", wfv1.NodeTypePod, node.Type)
 	}
-
+	tmpl := woc.execWf.GetTemplateByName(node.TemplateName)
+	if tmpl == nil {
+		return nil, nil
+	}
+	cluster := tmpl.Cluster
+	namespace := tmpl.Namespace
+	if namespace == "" {
+		namespace = woc.wf.GetNamespace()
+	}
 	podName := woc.getPodName(node.Name, node.TemplateName)
-	return woc.controller.getPod(woc.wf.GetNamespace(), podName)
+	return woc.controller.getPod(cluster, namespace, podName)
 }
 
 func (woc *wfOperationCtx) recordNodePhaseEvent(node *wfv1.NodeStatus) {

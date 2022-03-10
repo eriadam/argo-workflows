@@ -186,6 +186,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 			},
 		}),
 		kubeclientset:             kube,
+		kubeclientsets:            map[string]kubernetes.Interface{"": kube},
 		dynamicInterface:          dynamicClient,
 		wfclientset:               wfclientset,
 		workflowKeyLock:           sync.NewKeyLock(),
@@ -223,14 +224,16 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 		wfc.taskResultInformer = informerFactory.Argoproj().V1alpha1().WorkflowTaskResults()
 		wfc.wftmplInformer = informerFactory.Argoproj().V1alpha1().WorkflowTemplates()
 		wfc.addWorkflowInformerHandlers(ctx)
-		wfc.podInformer = wfc.newPodInformer(ctx)
+		wfc.podInformers = wfc.newPodInformers()
 		wfc.configMapInformer = wfc.newConfigMapInformer()
 		wfc.createSynchronizationManager(ctx)
 		_ = wfc.initManagers(ctx)
 
 		go wfc.wfInformer.Run(ctx.Done())
 		go wfc.wftmplInformer.Informer().Run(ctx.Done())
-		go wfc.podInformer.Run(ctx.Done())
+		for _, podInformer := range wfc.podInformers {
+			go podInformer.Run(ctx.Done())
+		}
 		go wfc.wfTaskSetInformer.Informer().Run(ctx.Done())
 		go wfc.taskResultInformer.Informer().Run(ctx.Done())
 		wfc.cwftmplInformer = informerFactory.Argoproj().V1alpha1().ClusterWorkflowTemplates()
@@ -239,7 +242,6 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 		for _, c := range []cache.SharedIndexInformer{
 			wfc.wfInformer,
 			wfc.wftmplInformer.Informer(),
-			wfc.podInformer,
 			wfc.cwftmplInformer.Informer(),
 			wfc.wfTaskSetInformer.Informer(),
 			wfc.taskResultInformer.Informer(),
@@ -361,20 +363,20 @@ func createRunningPods(ctx context.Context, woc *wfOperationCtx) {
 					Phase: apiv1.PodRunning,
 				},
 			}, metav1.CreateOptions{})
-			_ = woc.controller.podInformer.GetStore().Add(pod)
+			_ = woc.controller.podInformers[""].GetStore().Add(pod)
 		}
 	}
 }
 
 func syncPodsInformer(ctx context.Context, woc *wfOperationCtx, podObjs ...apiv1.Pod) {
-	podcs := woc.controller.kubeclientset.CoreV1().Pods(woc.wf.GetNamespace())
+	podcs := woc.controller.kubeclientsets[""].CoreV1().Pods(woc.wf.GetNamespace())
 	pods, err := podcs.List(ctx, metav1.ListOptions{})
 	if err != nil {
 		panic(err)
 	}
 	podObjs = append(podObjs, pods.Items...)
 	for _, pod := range podObjs {
-		err = woc.controller.podInformer.GetIndexer().Add(&pod)
+		err = woc.controller.podInformers[""].GetIndexer().Add(&pod)
 		if err != nil {
 			panic(err)
 		}
@@ -401,7 +403,7 @@ func makePodsPhase(ctx context.Context, woc *wfOperationCtx, phase apiv1.PodPhas
 			if err != nil {
 				panic(err)
 			}
-			err = woc.controller.podInformer.GetStore().Update(updatedPod)
+			err = woc.controller.podInformers[""].GetStore().Update(updatedPod)
 			if err != nil {
 				panic(err)
 			}
@@ -410,15 +412,17 @@ func makePodsPhase(ctx context.Context, woc *wfOperationCtx, phase apiv1.PodPhas
 }
 
 func deletePods(ctx context.Context, woc *wfOperationCtx) {
-	for _, obj := range woc.controller.podInformer.GetStore().List() {
-		pod := obj.(*apiv1.Pod)
-		err := woc.controller.kubeclientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
-		if err != nil {
-			panic(err)
-		}
-		err = woc.controller.podInformer.GetStore().Delete(obj)
-		if err != nil {
-			panic(err)
+	for _, podInformer := range woc.controller.podInformers {
+		for _, obj := range podInformer.GetStore().List() {
+			pod := obj.(*apiv1.Pod)
+			err := woc.controller.kubeclientset.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+			if err != nil {
+				panic(err)
+			}
+			err = woc.controller.podInformers[""].GetStore().Delete(obj)
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 }

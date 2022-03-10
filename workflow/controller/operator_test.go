@@ -5276,6 +5276,7 @@ status:
     my-wf:
       name: my-wf
       phase: Failed
+      templateName: main
 `)
 	wf, err := util.FormulateResubmitWorkflow(wf, true)
 	if assert.NoError(t, err) {

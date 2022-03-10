@@ -104,7 +104,9 @@ func NewRootCommand() *cobra.Command {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			wfController, err := controller.NewWorkflowController(ctx, config, kubeclientset, wfclientset, namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap, executorPlugins)
+			restConfigs := map[string]*restclient.Config{"": config}
+			kubeclientsets := map[string]kubernetes.Interface{"": kubeclientset}
+			wfController, err := controller.NewWorkflowController(ctx, restConfigs, kubeclientsets, wfclientset, namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap, executorPlugins)
 			errors.CheckError(err)
 
 			go wfController.Run(ctx, workflowWorkers, workflowTTLWorkers, podCleanupWorkers)
