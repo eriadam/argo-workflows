@@ -66,7 +66,7 @@ RUN_MODE              := local
 KUBECTX               := $(shell [[ "`which kubectl`" != '' ]] && kubectl config current-context || echo none)
 DOCKER_DESKTOP        := $(shell [[ "$(KUBECTX)" == "docker-desktop" ]] && echo true || echo false)
 K3D                   := $(shell [[ "$(KUBECTX)" == "k3d-"* ]] && echo true || echo false)
-K3s                   := $(shell [[ "`which k3s`" != '' ]] && kubectl config current-context || echo none)
+K3S                   := $(shell [[ "`which k3s`" != '' ]] && kubectl config current-context || echo none)
 LOG_LEVEL             := debug
 UPPERIO_DB_DEBUG      := 0
 NAMESPACED            := true
