@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/argoproj/pkg/sync"
+	"github.com/casbin/casbin/v2"
 	"github.com/stretchr/testify/assert"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	apiv1 "k8s.io/api/core/v1"
@@ -188,6 +189,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 				S3Bucket: wfv1.S3Bucket{Endpoint: "my-endpoint", Bucket: "my-bucket"},
 			},
 		}),
+		enforcer:                  &casbin.Enforcer{},
 		kubeclientset:             kube,
 		kubeclientsets:            map[string]kubernetes.Interface{common.LocalCluster: kube},
 		metadataInterfaces:        map[string]metadata.Interface{common.LocalCluster: &fakeMetadataClient},
