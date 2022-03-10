@@ -24,13 +24,13 @@ You can only provide one secret for each cluster.
 
 Secrets alone are not enough to allow a workflow to create resources in another namespace. By default, workflows are
 only allowed to create workflows in their own namespace. You also need to create a Casbin RBAC policy and this must be
-mounted at /policy.csv in the workflow-controller:
+mounted at /auth/policy.csv in the workflow-controller:
 
 ```yaml
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: policy
+  name: auth
 data:
   policy.csv: |
     # Workflows in the "argo" namespace may create resources in the "other" cluster's "default" namespace
@@ -46,14 +46,14 @@ spec:
   template:
     spec:
       volumes:
-        - name: policy
+        - name: auth
           configMap:
-            name: policy
+            name: auth
       containers:
         - name: workflow-controller
           volumeMounts:
-            - mountPath: /
-              name: policy
+            - mountPath: /auth
+              name: auth
 ```
 
 Finally, the workflow controller must be configured with a unique name for the cluster.

@@ -158,11 +158,11 @@ func NewWorkflowController(
 	executorPlugins bool,
 ) (*WorkflowController, error) {
 	kubeclientset := kubeclientsets[common.LocalCluster]
-	dynamicInterface, err := dynamic.NewForConfig(restConfigs[""])
+	dynamicInterface, err := dynamic.NewForConfig(restConfigs[common.LocalCluster])
 	if err != nil {
 		return nil, err
 	}
-	enforcer, err := casbin.NewEnforcer("auth/model.conf", "auth/policy.csv")
+	enforcer, err := casbin.NewEnforcer("auth/model.conf", "auth/policy.csv", casbinLoggerInstance)
 	if err != nil {
 		return nil, err
 	}

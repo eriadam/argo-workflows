@@ -89,6 +89,12 @@ func NewRootCommand() *cobra.Command {
 				return err
 			}
 
+			// start a controller on instances of our custom resource
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			configs, kubeclientsets, metadataInterfaces, err := loadClusters(ctx, config, namespace)
+			errors.CheckError(err)
+
 			wfclientset := wfclientset.NewForConfigOrDie(config)
 
 			if !namespaced && managedNamespace != "" {
@@ -98,13 +104,6 @@ func NewRootCommand() *cobra.Command {
 			if namespaced && managedNamespace == "" {
 				managedNamespace = namespace
 			}
-
-			// start a controller on instances of our custom resource
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			configs, kubeclientsets, metadataInterfaces, err := loadClusters(ctx, config, namespace)
-			errors.CheckError(err)
 
 			wfController, err := controller.NewWorkflowController(
 				ctx,
