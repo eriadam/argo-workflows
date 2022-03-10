@@ -5,9 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/client-go/metadata"
-	fake2 "k8s.io/client-go/metadata/fake"
-
 	"github.com/argoproj/pkg/sync"
 	"github.com/stretchr/testify/assert"
 	authorizationv1 "k8s.io/api/authorization/v1"
@@ -20,7 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/metadata"
-	fake2 "k8s.io/client-go/metadata/fake"
+	fakemetadata "k8s.io/client-go/metadata/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -174,7 +171,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 	ctx, cancel := context.WithCancel(context.Background())
 	kube := fake.NewSimpleClientset(coreObjects...)
 
-	fakeMetadataClient := fake2.FakeMetadataClient{}
+	fakeMetadataClient := fakemetadata.FakeMetadataClient{}
 	wfc := &WorkflowController{
 		Config: config.Config{
 			Images: map[string]config.Image{

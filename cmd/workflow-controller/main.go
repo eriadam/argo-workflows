@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/client-go/metadata"
-
 	"github.com/argoproj/pkg/cli"
 	"github.com/argoproj/pkg/errors"
 	kubecli "github.com/argoproj/pkg/kube/cli"
