@@ -1,5 +1,6 @@
 apiVersion: v1
 data:
+  cluster: default
   executor: |
     resources:
       requests:

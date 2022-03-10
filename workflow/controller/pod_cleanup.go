@@ -5,7 +5,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
-	"github.com/argoproj/argo-workflows/v3/workflow/common"
+	"github.com/argoproj/argo-workflows/v3/workflow/controller/indexes"
 )
 
 func (woc *wfOperationCtx) queuePodsForCleanup() {
@@ -14,13 +14,20 @@ func (woc *wfOperationCtx) queuePodsForCleanup() {
 	strategy := podGC.GetStrategy()
 	selector, _ := podGC.GetLabelSelector()
 	workflowPhase := woc.wf.Status.Phase
-	for _, pod := range woc.completedPods {
-		cluster := pod.Annotations[common.LabelKeyCluster]
-		switch determinePodCleanupAction(selector, pod.Labels, strategy, workflowPhase, pod.Status.Phase) {
-		case deletePod:
-			woc.controller.queuePodForCleanupAfter(cluster, pod.Namespace, pod.Name, deletePod, delay)
-		case labelPodCompleted:
-			woc.controller.queuePodForCleanup(cluster, pod.Namespace, pod.Name, labelPodCompleted)
+	for cluster, podInformer := range woc.controller.podInformers {
+		items, _ := podInformer.GetIndexer().ByIndex(indexes.WorkflowIndex, indexes.WorkflowIndexValue(woc.wf.Namespace, woc.wf.Name))
+		for _, item := range items {
+			pod := item.(*apiv1.Pod)
+			nodeID := woc.nodeID(pod)
+			if !woc.execWf.Status.Nodes[nodeID].Fulfilled() {
+				continue
+			}
+			switch determinePodCleanupAction(selector, pod.Labels, strategy, workflowPhase, pod.Status.Phase) {
+			case deletePod:
+				woc.controller.queuePodForCleanupAfter(cluster, pod.Namespace, pod.Name, deletePod, delay)
+			case labelPodCompleted:
+				woc.controller.queuePodForCleanup(cluster, pod.Namespace, pod.Name, labelPodCompleted)
+			}
 		}
 	}
 }

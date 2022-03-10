@@ -72,6 +72,10 @@ NAMESPACED            := true
 ifeq ($(PROFILE),prometheus)
 RUN_MODE              := kubernetes
 endif
+ifeq ($(PROFILE),multi-cluster)
+MANAGED_NAMESPACE     := ""
+NAMESPACED            := false
+endif
 ifeq ($(PROFILE),stress)
 RUN_MODE              := kubernetes
 endif
@@ -405,6 +409,12 @@ ifneq ($(E2E_EXECUTOR),emissary)
 	# only change the executor from the default it we need to
 	kubectl patch cm/workflow-controller-configmap -p "{\"data\": {\"containerRuntimeExecutor\": \"$(E2E_EXECUTOR)\"}}"
 	kubectl apply -f manifests/quick-start/base/executor/$(E2E_EXECUTOR)
+endif
+ifeq ($(PROFILE),multi-cluster)
+	k3d cluster get other || k3d cluster create other --kubeconfig-switch-context=false
+	kubectl delete secret -l workflows.argoproj.io/cluster
+	kubectl create secret generic other-cluster "--from-literal=kubeconfig=`kubectl config view --context=k3d-other --minify --raw -o json`"
+	kubectl label secret other-cluster workflows.argoproj.io/cluster=other
 endif
 ifeq ($(PROFILE),stress)
 	kubectl -n $(KUBE_NAMESPACE) apply -f test/stress/massive-workflow.yaml

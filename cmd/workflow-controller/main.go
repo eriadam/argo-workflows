@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 
@@ -29,6 +30,7 @@ import (
 	cmdutil "github.com/argoproj/argo-workflows/v3/util/cmd"
 	"github.com/argoproj/argo-workflows/v3/util/logs"
 	pprofutil "github.com/argoproj/argo-workflows/v3/util/pprof"
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
 	"github.com/argoproj/argo-workflows/v3/workflow/controller"
 	"github.com/argoproj/argo-workflows/v3/workflow/metrics"
 )
@@ -81,16 +83,10 @@ func NewRootCommand() *cobra.Command {
 			config.Burst = burst
 			config.QPS = qps
 
-			logs.AddK8SLogTransportWrapper(config)
-			metrics.AddMetricsTransportWrapper(config)
-
 			namespace, _, err := clientConfig.Namespace()
 			if err != nil {
 				return err
 			}
-
-			kubeclientset := kubernetes.NewForConfigOrDie(config)
-			wfclientset := wfclientset.NewForConfigOrDie(config)
 
 			if !namespaced && managedNamespace != "" {
 				log.Warn("ignoring --managed-namespace because --namespaced is false")
@@ -104,9 +100,27 @@ func NewRootCommand() *cobra.Command {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			restConfigs := map[string]*restclient.Config{"": config}
-			kubeclientsets := map[string]kubernetes.Interface{"": kubeclientset}
-			wfController, err := controller.NewWorkflowController(ctx, restConfigs, kubeclientsets, wfclientset, namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap, executorPlugins)
+			configs := map[string]*restclient.Config{"": config}
+
+			secrets := kubernetes.NewForConfigOrDie(config).CoreV1().Secrets(namespace)
+			list, err := secrets.List(ctx, metav1.ListOptions{LabelSelector: common.LabelKeyCluster})
+			errors.CheckError(err)
+			for _, item := range list.Items {
+				kc, err := clientcmd.Load(item.Data["kubeconfig"])
+				errors.CheckError(err)
+				cluster := item.Labels[common.LabelKeyCluster]
+				config, err := clientcmd.NewNonInteractiveClientConfig(*kc, kc.CurrentContext, &clientcmd.ConfigOverrides{}, clientcmd.NewDefaultClientConfigLoadingRules()).ClientConfig()
+				errors.CheckError(err)
+				logs.AddK8SLogTransportWrapper(config)
+				metrics.AddMetricsTransportWrapper(config)
+				configs[cluster] = config
+			}
+			kubeclientsets := map[string]kubernetes.Interface{}
+			wfclientset := wfclientset.NewForConfigOrDie(config)
+			for cluster, config := range configs {
+				kubeclientsets[cluster] = kubernetes.NewForConfigOrDie(config)
+			}
+			wfController, err := controller.NewWorkflowController(ctx, configs, kubeclientsets, wfclientset, namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap, executorPlugins)
 			errors.CheckError(err)
 
 			go wfController.Run(ctx, workflowWorkers, workflowTTLWorkers, podCleanupWorkers)

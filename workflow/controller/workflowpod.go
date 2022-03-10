@@ -214,9 +214,6 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 				common.AnnotationKeyNodeName: nodeName,
 				common.AnnotationKeyNodeID:   nodeID,
 			},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(woc.wf, wfv1.SchemeGroupVersion.WithKind(workflow.WorkflowKind)),
-			},
 		},
 		Spec: apiv1.PodSpec{
 			RestartPolicy:         apiv1.RestartPolicyNever,
@@ -225,6 +222,27 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 			ImagePullSecrets:      woc.execWf.Spec.ImagePullSecrets,
 		},
 	}
+
+	cluster := tmpl.Cluster
+
+	if cluster == "" {
+		pod.SetOwnerReferences([]metav1.OwnerReference{
+			*metav1.NewControllerRef(woc.wf, wfv1.SchemeGroupVersion.WithKind(workflow.WorkflowKind)),
+		})
+	} else {
+		pod.Labels[common.LabelKeyCluster] = woc.controller.Config.Cluster
+		pod.Labels[common.LabelKeyNamespace] = woc.wf.Namespace
+	}
+
+	namespace := tmpl.Namespace
+	if namespace == "" {
+		namespace = woc.wf.Namespace
+	}
+
+	log := woc.log.WithField("podName", pod.Name).
+		WithField("nodeName", nodeName).
+		WithField("namespace", namespace).
+		WithField("cluster", cluster)
 
 	if opts.onExitPod {
 		// This pod is part of an onExit handler, label it so
@@ -381,11 +399,6 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 	}
 
 	// Apply the patch string from template
-	namespace := tmpl.Namespace
-	if namespace == "" {
-		namespace = woc.wf.Namespace
-	}
-
 	if woc.hasPodSpecPatch(tmpl) {
 		jsonstr, err := json.Marshal(pod.Spec)
 		if err != nil {
@@ -466,23 +479,21 @@ func (woc *wfOperationCtx) createWorkflowPod(ctx context.Context, nodeName strin
 		return nil, ErrResourceRateLimitReached
 	}
 
-	woc.log.Debugf("Creating Pod: %s (%s)", nodeName, pod.Name)
+	log.Info("Creating Pod")
 
-	created, err := woc.controller.kubeclientsets[tmpl.Cluster].CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
+	created, err := woc.controller.kubeclientsets[cluster].CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
+		log.WithError(err).Info("Failed to create pod")
 		if apierr.IsAlreadyExists(err) {
 			// workflow pod names are deterministic. We can get here if the
 			// controller fails to persist the workflow after creating the pod.
-			woc.log.Infof("Failed pod %s (%s) creation: already exists", nodeName, pod.Name)
 			return created, nil
 		}
 		if errorsutil.IsTransientErr(err) {
 			return nil, err
 		}
-		woc.log.Infof("Failed to create pod %s (%s): %v", nodeName, pod.Name, err)
 		return nil, errors.InternalWrapError(err)
 	}
-	woc.log.Infof("Created pod: %s (%s)", nodeName, created.Name)
 	woc.activePods++
 	return created, nil
 }
@@ -494,11 +505,11 @@ func (woc *wfOperationCtx) podExists(nodeID string) (existing *apiv1.Pod, exists
 		return nil, false, nil
 	}
 	cluster := tmpl.Cluster
-	namespace := tmpl.Namespace
-	if namespace == "" {
-		namespace = woc.wf.Namespace
+	podInformer, ok := woc.controller.podInformers[cluster]
+	if !ok {
+		return nil, false, fmt.Errorf("failed to get pod for node: unknown cluster %q", cluster)
 	}
-	objs, err := woc.controller.podInformers[cluster].GetIndexer().ByIndex(indexes.NodeIDIndex, namespace+"/"+nodeID)
+	objs, err := podInformer.GetIndexer().ByIndex(indexes.NodeIDIndex, woc.wf.Namespace+"/"+nodeID)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get pod from informer store: %w", err)
 	}
