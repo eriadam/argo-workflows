@@ -23,8 +23,8 @@ kubectl label secret other-cluster workflows.argoproj.io/cluster=other
 You can only provide one secret for each cluster.
 
 Secrets alone are not enough to allow a workflow to create resources in another namespace. By default, workflows are
-only allowed to create workflows in their own namespace. You also need to create a Casbin RBAC policy and this must be
-mounted at /auth/policy.csv in the workflow-controller:
+only allowed to create resources in their own namespace. You need to create a auth policy and this must be mounted at
+/auth/policy.csv in the workflow-controller:
 
 ```yaml
 kind: ConfigMap
@@ -56,7 +56,7 @@ spec:
               name: auth
 ```
 
-Finally, the workflow controller must be configured with a unique name for the cluster.
+Next, the workflow controller must be configured with a unique name for the cluster.
 
 ```yaml
 apiVersion: v1
@@ -68,6 +68,10 @@ data:
   # It is acceptable for this to be a random UUID, but once set, it should not be changed.
   cluster: my-cluster-x
 ```
+
+Finally, the target cluster must have the `workflowtaskresoult` CRD installed.
+
+Any service account used by a workflow will need to have the standard executor role and permission.
 
 ## Labels
 

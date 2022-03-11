@@ -416,6 +416,9 @@ ifeq ($(PROFILE),multi-cluster)
 	k3d cluster create other --kubeconfig-switch-context=false --no-lb
 	kubectl config delete-context other || true
 	kubectl config rename-context k3d-other other
+	kubectl --context=other apply -f manifests/base/crds/minimal/argoproj.io_workflowtaskresults.yaml
+	kubectl --context=other apply -f manifests/quick-start/base/executor/emissary/executor-role.yaml
+	kubectl --context=other apply -f manifests/quick-start/base/executor-default-rolebinding.yaml
 	kubectl delete secret -l workflows.argoproj.io/cluster
 	kubectl create secret generic other-cluster "--from-literal=kubeconfig=`kubectl config view --context=other --minify --raw -o json`"
 	kubectl label secret other-cluster workflows.argoproj.io/cluster=other

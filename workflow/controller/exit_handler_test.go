@@ -5,12 +5,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
+
 	"github.com/stretchr/testify/assert"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
 )
 
 var stepsOnExitTmpl = `apiVersion: argoproj.io/v1alpha1
@@ -745,14 +748,14 @@ func TestWorkflowOnExitHttpReconciliation(t *testing.T) {
 	ctx := context.Background()
 	woc := newWorkflowOperationCtx(wf, controller)
 
-	taskSets, err := woc.controller.wfclientset.ArgoprojV1alpha1().WorkflowTaskSets("").List(ctx, v1.ListOptions{})
+	taskSets, err := woc.controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().WorkflowTaskSets("").List(ctx, v1.ListOptions{})
 	if assert.NoError(t, err) {
 		assert.Len(t, taskSets.Items, 0)
 	}
 	woc.operate(ctx)
 
 	assert.Len(t, woc.wf.Status.Nodes, 2)
-	taskSets, err = woc.controller.wfclientset.ArgoprojV1alpha1().WorkflowTaskSets("").List(ctx, v1.ListOptions{})
+	taskSets, err = woc.controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().WorkflowTaskSets("").List(ctx, v1.ListOptions{})
 	if assert.NoError(t, err) {
 		assert.Len(t, taskSets.Items, 1)
 	}

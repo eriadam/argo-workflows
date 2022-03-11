@@ -95,7 +95,7 @@ type WorkflowController struct {
 	metadataInterfaces map[string]metadata.Interface
 	rateLimiter        *rate.Limiter
 	dynamicInterface   dynamic.Interface
-	wfclientset        wfclientset.Interface
+	wfclientsets       map[string]wfclientset.Interface
 
 	// datastructures to support the processing of workflows and workflow pods
 	wfInformer            cache.SharedIndexInformer
@@ -118,7 +118,7 @@ type WorkflowController struct {
 	archiveLabelSelector  labels.Selector
 	cacheFactory          controllercache.Factory
 	wfTaskSetInformer     wfextvv1alpha1.WorkflowTaskSetInformer
-	taskResultInformer    wfextvv1alpha1.WorkflowTaskResultInformer
+	taskResultInformers   map[string]cache.SharedIndexInformer
 
 	// progressPatchTickDuration defines how often the executor will patch pod annotations if an updated progress is found.
 	// Default is 1m and can be configured using the env var ARGO_PROGRESS_PATCH_TICK_DURATION.
@@ -153,7 +153,7 @@ func NewWorkflowController(
 	restConfigs map[string]*rest.Config,
 	kubeclientsets map[string]kubernetes.Interface,
 	metadataInterfaces map[string]metadata.Interface,
-	wfclientset wfclientset.Interface,
+	wfclientsets map[string]wfclientset.Interface,
 	namespace, managedNamespace, executorImage, executorImagePullPolicy, containerRuntimeExecutor, configMap string,
 	executorPlugins bool,
 ) (*WorkflowController, error) {
@@ -173,7 +173,7 @@ func NewWorkflowController(
 		kubeclientsets:             kubeclientsets,
 		metadataInterfaces:         metadataInterfaces,
 		dynamicInterface:           dynamicInterface,
-		wfclientset:                wfclientset,
+		wfclientsets:               wfclientsets,
 		namespace:                  namespace,
 		managedNamespace:           managedNamespace,
 		cliExecutorImage:           executorImage,
@@ -215,7 +215,7 @@ func (wfc *WorkflowController) newThrottler() sync.Throttler {
 func (wfc *WorkflowController) runGCcontroller(ctx context.Context, workflowTTLWorkers int) {
 	defer runtimeutil.HandleCrash(runtimeutil.PanicHandlers...)
 
-	gcCtrl := gccontroller.NewController(wfc.wfclientset, wfc.wfInformer, wfc.metrics, wfc.Config.RetentionPolicy)
+	gcCtrl := gccontroller.NewController(wfc.wfclientsets[common.LocalCluster], wfc.wfInformer, wfc.metrics, wfc.Config.RetentionPolicy)
 	err := gcCtrl.Run(ctx.Done(), workflowTTLWorkers)
 	if err != nil {
 		panic(err)
@@ -225,7 +225,7 @@ func (wfc *WorkflowController) runGCcontroller(ctx context.Context, workflowTTLW
 func (wfc *WorkflowController) runCronController(ctx context.Context) {
 	defer runtimeutil.HandleCrash(runtimeutil.PanicHandlers...)
 
-	cronController := cron.NewCronController(wfc.wfclientset, wfc.dynamicInterface, wfc.namespace, wfc.GetManagedNamespace(), wfc.Config.InstanceID, wfc.metrics, wfc.eventRecorderManager)
+	cronController := cron.NewCronController(wfc.wfclientsets[common.LocalCluster], wfc.dynamicInterface, wfc.namespace, wfc.GetManagedNamespace(), wfc.Config.InstanceID, wfc.metrics, wfc.eventRecorderManager)
 	cronController.Run(ctx)
 }
 
@@ -260,7 +260,7 @@ func (wfc *WorkflowController) Run(ctx context.Context, wfWorkers, workflowTTLWo
 	wfc.wfInformer = util.NewWorkflowInformer(wfc.dynamicInterface, wfc.GetManagedNamespace(), workflowResyncPeriod, wfc.tweakListOptions, indexers)
 	wfc.wftmplInformer = informer.NewTolerantWorkflowTemplateInformer(wfc.dynamicInterface, workflowTemplateResyncPeriod, wfc.managedNamespace)
 	wfc.wfTaskSetInformer = wfc.newWorkflowTaskSetInformer()
-	wfc.taskResultInformer = wfc.newWorkflowTaskResultInformer()
+	wfc.taskResultInformers = wfc.newWorkflowTaskResultInformers()
 
 	wfc.addWorkflowInformerHandlers(ctx)
 	podInformers, podGCInformers := wfc.newPodInformers()
@@ -288,7 +288,9 @@ func (wfc *WorkflowController) Run(ctx context.Context, wfWorkers, workflowTTLWo
 	}
 	go wfc.configMapInformer.Run(ctx.Done())
 	go wfc.wfTaskSetInformer.Informer().Run(ctx.Done())
-	go wfc.taskResultInformer.Informer().Run(ctx.Done())
+	for _, taskResultInformer := range wfc.taskResultInformers {
+		go taskResultInformer.Run(ctx.Done())
+	}
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
 	if !cache.WaitForCacheSync(
@@ -297,13 +299,17 @@ func (wfc *WorkflowController) Run(ctx context.Context, wfWorkers, workflowTTLWo
 		wfc.wftmplInformer.Informer().HasSynced,
 		wfc.configMapInformer.HasSynced,
 		wfc.wfTaskSetInformer.Informer().HasSynced,
-		wfc.taskResultInformer.Informer().HasSynced,
 	) {
 		log.Fatal("Timed out waiting for caches to sync")
 	}
 	for _, podInformer := range wfc.podInformers {
 		if !cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced) {
 			log.Fatal("Timed out waiting for pod caches to sync")
+		}
+	}
+	for _, taskResultInformer := range wfc.taskResultInformers {
+		if !cache.WaitForCacheSync(ctx.Done(), taskResultInformer.HasSynced) {
+			log.Fatal("Timed out waiting for task result caches to sync")
 		}
 	}
 
@@ -424,7 +430,7 @@ func (wfc *WorkflowController) initManagers(ctx context.Context) error {
 		labelSelector = labelSelector.Add(*req)
 	}
 	listOpts := metav1.ListOptions{LabelSelector: labelSelector.String()}
-	wfList, err := wfc.wfclientset.ArgoprojV1alpha1().Workflows(wfc.namespace).List(ctx, listOpts)
+	wfList, err := wfc.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows(wfc.namespace).List(ctx, listOpts)
 	if err != nil {
 		return err
 	}
@@ -999,7 +1005,7 @@ func (wfc *WorkflowController) archiveWorkflowAux(ctx context.Context, obj inter
 	if err != nil {
 		return fmt.Errorf("failed to marshal patch: %w", err)
 	}
-	_, err = wfc.wfclientset.ArgoprojV1alpha1().Workflows(un.GetNamespace()).Patch(
+	_, err = wfc.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows(un.GetNamespace()).Patch(
 		ctx,
 		un.GetName(),
 		types.MergePatchType,
@@ -1338,7 +1344,7 @@ func (wfc *WorkflowController) syncPodPhaseMetrics() {
 
 func (wfc *WorkflowController) newWorkflowTaskSetInformer() wfextvv1alpha1.WorkflowTaskSetInformer {
 	informer := externalversions.NewSharedInformerFactoryWithOptions(
-		wfc.wfclientset,
+		wfc.wfclientsets[common.LocalCluster],
 		workflowTaskSetResyncPeriod,
 		externalversions.WithNamespace(wfc.GetManagedNamespace()),
 		externalversions.WithTweakListOptions(func(x *metav1.ListOptions) {

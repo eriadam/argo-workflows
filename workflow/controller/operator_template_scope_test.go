@@ -4,10 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
+
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
 )
 
 var testTemplateScopeWorkflowYaml = `
@@ -172,7 +175,7 @@ func TestTemplateScopeWithParam(t *testing.T) {
 
 	cancel, controller := newController(wf, wftmpl)
 	defer cancel()
-	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("default")
+	wfcset := controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows("default")
 
 	ctx := context.Background()
 	woc := newWorkflowOperationCtx(wf, controller)
@@ -266,7 +269,7 @@ func TestTemplateScopeNestedStepsWithParams(t *testing.T) {
 
 	cancel, controller := newController(wf, wftmpl)
 	defer cancel()
-	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("default")
+	wfcset := controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows("default")
 
 	ctx := context.Background()
 	woc := newWorkflowOperationCtx(wf, controller)
@@ -375,7 +378,7 @@ func TestTemplateScopeDAG(t *testing.T) {
 
 	cancel, controller := newController(wf, wftmpl)
 	defer cancel()
-	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("default")
+	wfcset := controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows("default")
 
 	ctx := context.Background()
 	woc := newWorkflowOperationCtx(wf, controller)
@@ -478,7 +481,7 @@ func TestTemplateClusterScope(t *testing.T) {
 
 	cancel, controller := newController(wf, cwftmpl, wftmpl)
 	defer cancel()
-	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("default")
+	wfcset := controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows("default")
 
 	ctx := context.Background()
 	woc := newWorkflowOperationCtx(wf, controller)

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	workflow "github.com/argoproj/argo-workflows/v3/pkg/client/clientset/versioned"
+
 	"github.com/argoproj/pkg/sync"
 	"github.com/casbin/casbin/v2"
 	"github.com/stretchr/testify/assert"
@@ -28,6 +30,7 @@ import (
 	"github.com/argoproj/argo-workflows/v3/config"
 	"github.com/argoproj/argo-workflows/v3/persist/sqldb"
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	workflow "github.com/argoproj/argo-workflows/v3/pkg/client/clientset/versioned"
 	fakewfclientset "github.com/argoproj/argo-workflows/v3/pkg/client/clientset/versioned/fake"
 	"github.com/argoproj/argo-workflows/v3/pkg/client/clientset/versioned/scheme"
 	wfextv "github.com/argoproj/argo-workflows/v3/pkg/client/informers/externalversions"
@@ -194,7 +197,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 		kubeclientsets:            map[string]kubernetes.Interface{common.LocalCluster: kube},
 		metadataInterfaces:        map[string]metadata.Interface{common.LocalCluster: &fakeMetadataClient},
 		dynamicInterface:          dynamicClient,
-		wfclientset:               wfclientset,
+		wfclientsets:              map[string]workflow.Interface{common.LocalCluster: wfclientset},
 		workflowKeyLock:           sync.NewKeyLock(),
 		wfArchive:                 sqldb.NullWorkflowArchive,
 		hydrator:                  hydratorfake.Noop,
@@ -227,7 +230,7 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 	{
 		wfc.wfInformer = util.NewWorkflowInformer(dynamicClient, "", 0, wfc.tweakListOptions, indexers)
 		wfc.wfTaskSetInformer = informerFactory.Argoproj().V1alpha1().WorkflowTaskSets()
-		wfc.taskResultInformer = informerFactory.Argoproj().V1alpha1().WorkflowTaskResults()
+		wfc.taskResultInformers = wfc.newWorkflowTaskResultInformers()
 		wfc.wftmplInformer = informerFactory.Argoproj().V1alpha1().WorkflowTemplates()
 		wfc.addWorkflowInformerHandlers(ctx)
 		wfc.podInformers, _ = wfc.newPodInformers()
@@ -241,7 +244,9 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 			go podInformer.Run(ctx.Done())
 		}
 		go wfc.wfTaskSetInformer.Informer().Run(ctx.Done())
-		go wfc.taskResultInformer.Informer().Run(ctx.Done())
+		for _, taskResultInformers := range wfc.taskResultInformers {
+			go taskResultInformers.Run(ctx.Done())
+		}
 		wfc.cwftmplInformer = informerFactory.Argoproj().V1alpha1().ClusterWorkflowTemplates()
 		go wfc.cwftmplInformer.Informer().Run(ctx.Done())
 		// wfc.waitForCacheSync() takes minimum 100ms, we can be faster
@@ -250,7 +255,6 @@ func newController(options ...interface{}) (context.CancelFunc, *WorkflowControl
 			wfc.wftmplInformer.Informer(),
 			wfc.cwftmplInformer.Informer(),
 			wfc.wfTaskSetInformer.Informer(),
-			wfc.taskResultInformer.Informer(),
 		} {
 			for !c.HasSynced() {
 				time.Sleep(5 * time.Millisecond)
@@ -303,7 +307,7 @@ func unmarshalArtifact(yamlStr string) *wfv1.Artifact {
 }
 
 func expectWorkflow(ctx context.Context, controller *WorkflowController, name string, test func(wf *wfv1.Workflow)) {
-	wf, err := controller.wfclientset.ArgoprojV1alpha1().Workflows("").Get(ctx, name, metav1.GetOptions{})
+	wf, err := controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().Workflows("").Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		panic(err)
 	}

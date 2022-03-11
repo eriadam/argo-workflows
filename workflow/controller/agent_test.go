@@ -90,7 +90,7 @@ status:
 		defer cancel()
 		woc := newWorkflowOperationCtx(wf, controller)
 		woc.operate(ctx)
-		tslist, err := woc.controller.wfclientset.ArgoprojV1alpha1().WorkflowTaskSets("default").List(ctx, v1.ListOptions{})
+		tslist, err := woc.controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().WorkflowTaskSets("default").List(ctx, v1.ListOptions{})
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tslist.Items)
 		assert.Len(t, tslist.Items, 1)
@@ -115,7 +115,7 @@ status:
 		controller.Config.InstanceID = "testID"
 		woc := newWorkflowOperationCtx(wf, controller)
 		woc.operate(ctx)
-		tslist, err := woc.controller.wfclientset.ArgoprojV1alpha1().WorkflowTaskSets("default").List(ctx, v1.ListOptions{})
+		tslist, err := woc.controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().WorkflowTaskSets("default").List(ctx, v1.ListOptions{})
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tslist.Items)
 		assert.Len(t, tslist.Items, 1)

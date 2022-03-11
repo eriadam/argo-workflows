@@ -4,11 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
+
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
 	"github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	"github.com/argoproj/argo-workflows/v3/workflow/common"
 )
 
 var httpwf = `apiVersion: argoproj.io/v1alpha1
@@ -74,7 +77,7 @@ func TestHTTPTemplate(t *testing.T) {
 			assert.Equal(t, pod.Name, "hello-world-1340600742-agent")
 		}
 		// tss, err :=controller.wfclientset.ArgoprojV1alpha1().WorkflowTaskSets(wf.Namespace).List(ctx, metav1.ListOptions{})
-		ts, err := controller.wfclientset.ArgoprojV1alpha1().WorkflowTaskSets(wf.Namespace).Get(ctx, "hello-world", metav1.GetOptions{})
+		ts, err := controller.wfclientsets[common.LocalCluster].ArgoprojV1alpha1().WorkflowTaskSets(wf.Namespace).Get(ctx, "hello-world", metav1.GetOptions{})
 		assert.NoError(t, err)
 		assert.NotNil(t, ts)
 		assert.Len(t, ts.Spec.Tasks, 1)
