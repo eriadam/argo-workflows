@@ -150,6 +150,7 @@ jobs:
           name: argoexec
           path: /tmp
       - run: docker load < /tmp/argoexec_image.tar
+      - run:  k3d image import quay.io/argoproj/argoexec
       - name: Set-up /etc/hosts
         run: |
           echo '127.0.0.1 dex'      | sudo tee -a /etc/hosts

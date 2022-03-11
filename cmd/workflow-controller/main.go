@@ -95,7 +95,7 @@ func NewRootCommand() *cobra.Command {
 			configs, kubeclientsets, metadataInterfaces, err := loadClusters(ctx, config, namespace)
 			errors.CheckError(err)
 
-			wfclientset := wfclientset.NewForConfigOrDie(config)
+			wfclientset := wfclientset.NewForConfigOrDie(configs[common.LocalCluster])
 
 			if !namespaced && managedNamespace != "" {
 				log.Warn("ignoring --managed-namespace because --namespaced is false")
@@ -186,13 +186,13 @@ func loadClusters(ctx context.Context, config *restclient.Config, namespace stri
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to create client config for secret %q: %w", secret.Name, err)
 		}
-		logs.AddK8SLogTransportWrapper(config)
-		metrics.AddMetricsTransportWrapper(config)
 		configs[secret.Labels[common.LabelKeyCluster]] = config
 	}
 	kubeclientsets := map[string]kubernetes.Interface{}
 	metadataInterfaces := map[string]metadata.Interface{}
 	for cluster, config := range configs {
+		logs.AddK8SLogTransportWrapper(config)
+		metrics.AddMetricsTransportWrapper(config)
 		kubeclientsets[cluster] = kubernetes.NewForConfigOrDie(config)
 		metadataInterfaces[cluster] = metadata.NewForConfigOrDie(config)
 	}
